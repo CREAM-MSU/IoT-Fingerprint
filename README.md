@@ -1,2 +1,5 @@
 # IoT-Fingerprint
-Methods to combine Fingerprints for Identity 
+Methods to Fingerprint Internet Connected Devices for Identity Profiling
+
+## Fingerprint Manufuctuer 
+
