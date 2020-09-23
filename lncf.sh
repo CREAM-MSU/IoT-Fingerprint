@@ -1,5 +1,6 @@
 #!/bin/bash
 export MAC_VENDOR_DB="oui.txt"
+PARALLEL_NMAPS=16
 
 shopt -s lastpipe
 
@@ -8,6 +9,25 @@ die() {
   exit 1
 }
 
+hex2ip() {
+  local iphex="$1"
+  printf "%i.%i.%i.%i" $[iphex>>24] $[(iphex>>16) & 0xff] $[(iphex>>8) & 0xff] $[iphex & 0xff]
+}
+
+if [ "$1" = "--portscan" ]
+then
+  shift
+  PREFIX="$*"
+  export IP="${PREFIX%%;*}"
+  TCP_PORTS="$(nmap -sT -Pn "$IP"|awk 'BEGIN {ORS=","} {if ($2 == "open") print gensub("/tcp", "", "g", $1)}')"
+  TCP_PORTS="${TCP_PORTS%,}"
+  TCP_PORTS="${TCP_PORTS//[^0-9,]/}"
+  UDP_PORTS="$(nmap -sU -Pn "$IP"|awk 'BEGIN {ORS=","} {if ($2 == "open") print gensub("/udp", "", "g", $1)}')"
+  UDP_PORTS="${UDP_PORTS%,}"
+  UDP_PORTS="${UDP_PORTS//[^0-9,]/}"
+  echo "$PREFIX;$TCP_PORTS;$UDP_PORTS"
+  exit 0
+fi
 
 declare -A IP_MAC
 
@@ -45,7 +65,7 @@ echo "IFACE: $IFACE"
 echo "IP_RANGE: $IP_RANGE"
 
 echo "Doing arp scanning"
-arp-scan |while read -r -a line
+arp-scan --interface "$IFACE" --ignoredups "$IP_RANGE"|while read -r -a line
 do
   IP="${line[0]}"
   [[ "$IP" =~ [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3} ]] || continue
@@ -69,12 +89,7 @@ do
     VENDOR="Unknown"
   else
     VENDOR="${VENDOR:22}"
+    VENDOR="${VENDOR//[^a-zA-Z0-9 ]/}"
   fi
-  TCP_PORTS="$(nmap -sT -Pn "$IP"|awk 'BEGIN {ORS=","} {if ($2 == "open") print gensub("/tcp", "", "g", $1)}')"
-  TCP_PORTS="${TCP_PORTS%,}"
-  TCP_PORTS="${TCP_PORTS//[^0-9,]/}"
-  UDP_PORTS="$(nmap -sU -Pn "$IP"|awk 'BEGIN {ORS=","} {if ($2 == "open") print gensub("/udp", "", "g", $1)}')"
-  UDP_PORTS="${UDP_PORTS%,}"
-  UCP_PORTS="${UDP_PORTS//[^0-9,]/}"
-  echo "$IP $MAC ${VENDOR%% *} $TCP_PORTS $UDP_PORTS"
-done
+  echo "$IP;$MAC;$VENDOR"
+done|xargs -P "${PARALLEL_NMAPS}" --max-lines=1 $0 --portscan
